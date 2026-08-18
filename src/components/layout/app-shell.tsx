@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { PlayerBar } from "@/components/layout/player-bar";
 import { PlayerBarBottom } from "@/components/layout/player-bar-bottom";
+import { NowPlayingOverlay } from "@/components/layout/now-playing-overlay";
 import { FloatingPlayerSync } from "@/components/layout/floating-player-sync";
 import { DragSnapOverlay } from "@/components/layout/drag-snap-overlay";
 import { WindowResizeHandles } from "@/components/layout/window-resize-handles";
@@ -34,6 +35,7 @@ import { useWhatsNewOnUpdate } from "@/lib/store/whats-new";
 import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
+import { useNowPlayingStore } from "@/lib/store/now-playing";
 import { usePremiumStatusSync } from "@/lib/store/premium";
 import {
   useCloseBehaviorSync,
@@ -109,6 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const playerWidth = useLayoutStore((s) => s.playerWidth);
   const background = useSettingsStore((s) => s.background);
+  const nowPlayingOpen = useNowPlayingStore((s) => s.open);
   // The player UI is hidden whenever there's no active track —
   // covers the "Nothing playing" empty state at first launch and
   // after the queue is cleared. The mode itself stays the same; the
@@ -129,6 +132,27 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;
   }, [pathname]);
+
+  // The immersive Now-Playing overlay is portaled to <body>, so while it's
+  // open we mark the whole app root `inert` — the background drops out of
+  // the tab order and the accessibility tree in one attribute, which
+  // (together with the overlay's own focus-in/restore) gives modal focus
+  // behavior without a focus-trap library. Radix menus/dialogs portal to
+  // <body> outside this root, so they're unaffected.
+  const rootRef = useRef<HTMLDivElement>(null);
+  // useLayoutEffect (not useEffect) so the flag clears synchronously on
+  // close, before the overlay's passive cleanup restores focus to the
+  // expand trigger — otherwise focus() would hit a still-`inert` element.
+  useLayoutEffect(() => {
+    if (rootRef.current) rootRef.current.inert = nowPlayingOpen;
+  }, [nowPlayingOpen]);
+
+  // Auto-close: unmounting the overlay when the queue empties is not the
+  // same as resetting the flag — if it stayed `true`, the overlay would pop
+  // back open the moment the next track loads. Reset it explicitly.
+  useEffect(() => {
+    if (!hasTrack) useNowPlayingStore.getState().setOpen(false);
+  }, [hasTrack]);
 
   // Open / close the floating player window. We only spawn it when
   // there's actually something to show — at first launch with mode
@@ -212,7 +236,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           } as React.CSSProperties
         }
       >
-        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background">
+        <div
+          ref={rootRef}
+          className="relative flex h-screen w-screen flex-col overflow-hidden bg-background"
+        >
           {background === "ambient" && <BackgroundCover />}
           {/* Custom title bar spans the full window width so the
               Windows-style min/max/close buttons land in the actual
@@ -264,6 +291,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <ChannelPickerDialog />
           <WhatsNewDialog />
         </div>
+        {hasTrack && nowPlayingOpen && <NowPlayingOverlay />}
       </SidebarProvider>
       <Toaster />
     </TooltipProvider>
