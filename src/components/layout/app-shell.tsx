@@ -133,23 +133,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (mainRef.current) mainRef.current.scrollTop = 0;
   }, [pathname]);
 
-  // The immersive Now-Playing overlay is portaled to <body>, so while it's
-  // open we mark the whole app root `inert` — the background drops out of
-  // the tab order and the accessibility tree in one attribute, which
-  // (together with the overlay's own focus-in/restore) gives modal focus
-  // behavior without a focus-trap library. Radix menus/dialogs portal to
-  // <body> outside this root, so they're unaffected.
-  const rootRef = useRef<HTMLDivElement>(null);
-  // useLayoutEffect (not useEffect) so the flag clears synchronously on
-  // close, before the overlay's passive cleanup restores focus to the
-  // expand trigger — otherwise focus() would hit a still-`inert` element.
+  // While the (body-portaled) overlay is open, mark the content area `inert`
+  // for modal focus. The content row, not the root, so the title bar's drag +
+  // window controls stay live. Layout effect so it clears synchronously before
+  // the overlay restores focus, which would otherwise hit an inert element.
+  const contentRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (rootRef.current) rootRef.current.inert = nowPlayingOpen;
+    if (contentRef.current) contentRef.current.inert = nowPlayingOpen;
   }, [nowPlayingOpen]);
 
-  // Auto-close: unmounting the overlay when the queue empties is not the
-  // same as resetting the flag — if it stayed `true`, the overlay would pop
-  // back open the moment the next track loads. Reset it explicitly.
+  // Reset the flag when the queue empties — unmounting alone would leave it
+  // `true`, popping the overlay back open on the next track.
   useEffect(() => {
     if (!hasTrack) useNowPlayingStore.getState().setOpen(false);
   }, [hasTrack]);
@@ -236,16 +230,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           } as React.CSSProperties
         }
       >
-        <div
-          ref={rootRef}
-          className="relative flex h-screen w-screen flex-col overflow-hidden bg-background"
-        >
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background">
           {background === "ambient" && <BackgroundCover />}
           {/* Custom title bar spans the full window width so the
               Windows-style min/max/close buttons land in the actual
               top-right corner, not behind the floating player. */}
           <TopBar />
-          <div className="relative flex min-h-0 flex-1">
+          <div ref={contentRef} className="relative flex min-h-0 flex-1">
             <AppSidebar />
             <SidebarResizeHandle />
             {/* In `right` mode we reserve 23rem on the right for the

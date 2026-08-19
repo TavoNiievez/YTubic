@@ -145,9 +145,7 @@ export function PlayerBarBottom() {
                     overrideHighRes={iTunesCover}
                   />
                   <ArtworkOutline className="rounded-md" />
-                  {/* Cover is too small for a corner button — reveal a
-                      full-cover scrim + icon on hover instead. See
-                      player-bar.tsx for the stopPropagation rationale. */}
+                  {/* Too small for a corner button — full-cover scrim on hover. */}
                   <button
                     type="button"
                     aria-label="Open now playing"

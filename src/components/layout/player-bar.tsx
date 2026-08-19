@@ -579,12 +579,9 @@ export function PlayerBar({
                   overrideHighRes={iTunesCover}
                 />
                 <ArtworkOutline className="rounded-md" />
-                {/* Expand into the immersive Now-Playing overlay. Not in the
-                    floating window — that window has no app shell / overlay
-                    mount, and no main-window store to flip. `stopPropagation`
-                    on pointerdown keeps this click from starting the cover's
-                    layout-switch drag; `pointer-events-auto` re-enables clicks
-                    the Thumbnail turned off. */}
+                {/* Expand into the Now-Playing overlay (not in the floating
+                    window — no app shell there). `stopPropagation` keeps the
+                    click from starting the cover's drag. */}
                 {variant !== "floating" && (
                   <button
                     type="button"

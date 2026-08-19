@@ -10,7 +10,7 @@ import {
   RepeatIcon,
   Repeat1Icon,
   Loader2Icon,
-  XIcon,
+  ChevronDownIcon,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -42,32 +42,9 @@ import { useScrubStore } from "@/lib/store/scrub";
 import { useNowPlayingStore } from "@/lib/store/now-playing";
 import { cn } from "@/lib/utils";
 
-/**
- * Immersive full-window "Now Playing" screen: full-size album cover on the
- * left, full-size synced karaoke lyrics on the right, over a blurred copy
- * of the cover.
- *
- * Reuses the whole existing player stack — the same playback/scrub stores,
- * the `ProgressSlider`/`VolumeControl` bits exported from the player bar,
- * and the `LyricsBody`/`useLyricsView` karaoke engine (which reads the
- * playback position + scrub internally, highlights the active line, and
- * seeks on line click). The only new logic here is layout.
- *
- * Notes on why it's built the way it is:
- *  - Portaled to `document.body` so `app-shell` can flip the app root
- *    `inert` while it's open (background removed from tab order + a11y
- *    tree) without any sibling gymnastics. React context still flows
- *    through the portal, so the reused QueryClient/Router/store consumers
- *    keep working.
- *  - Its own `TooltipProvider delayDuration={800}` because it mounts inside
- *    `SidebarProvider`'s `delay=0` provider (same reason both bars re-wrap).
- *  - The content is forced into a `dark` token context: the reused lyrics /
- *    volume / like / source-menu components paint with themed foreground
- *    colors, which would be dark-on-dark over this backdrop in the light
- *    theme. `dark` makes them light regardless of the app theme.
- *  - Positioned below the 36px custom title bar (`top-(--titlebar-h)`) so
- *    the OS window controls + drag region stay usable while it's open.
- */
+// Immersive full-window "Now Playing" screen: full-size cover left, synced
+// karaoke lyrics right. Reuses the playback/scrub stores, the player-bar
+// transport bits, and the LyricsBody/useLyricsView engine — only layout is new.
 export function NowPlayingOverlay() {
   const { playing, status, position, duration, shuffle, repeat } =
     usePlaybackStore(
@@ -98,13 +75,8 @@ export function NowPlayingOverlay() {
 
   const closeBtnRef = useRef<HTMLButtonElement>(null);
 
-  // Esc-to-close + focus management (see doc comment). The
-  // `defaultPrevented` guard mirrors app-shell's `useGlobalShortcuts` so a
-  // press that Radix already consumed (closing an open lyrics-source menu
-  // or a tooltip) doesn't also close the overlay. Focus moves into the
-  // overlay on open and is restored to the expand trigger on close;
-  // combined with `inert` on the app root (app-shell), that's a compliant
-  // modal focus model without a focus-trap library.
+  // Esc closes + focus moves in on open, restored on close. The
+  // `defaultPrevented` guard lets Radix close an open menu/tooltip first.
   useEffect(() => {
     const prevFocused = document.activeElement as HTMLElement | null;
     closeBtnRef.current?.focus();
@@ -122,18 +94,16 @@ export function NowPlayingOverlay() {
     };
   }, [setOpen]);
 
-  // Auto-close guarded upstream (hasTrack in app-shell); this null-guard
-  // only covers the frame where the queue empties while we're still mounted.
   if (!track) return null;
 
   const loading = status === "loading" && playing;
-  const coverUrl =
-    track.thumbnails && track.thumbnails.length > 0
-      ? pickHighResThumbnail(track.thumbnails)
-      : null;
+  const coverUrl = pickHighResThumbnail(track.thumbnails);
 
   const overlay = (
+    // Own provider: the overlay mounts inside SidebarProvider's delay=0 one.
     <TooltipProvider delayDuration={800} skipDelayDuration={0}>
+      {/* `dark`: reused components stay legible over the dark backdrop.
+          `top-(--titlebar-h)`: keep the OS window controls usable. */}
       <motion.div
         role="region"
         aria-label="Now playing"
@@ -142,46 +112,43 @@ export function NowPlayingOverlay() {
         transition={{ duration: reduce ? 0.12 : 0.2, ease: "easeOut" }}
         className="dark fixed inset-x-0 bottom-0 top-(--titlebar-h) z-40 flex flex-col overflow-hidden bg-background text-foreground"
       >
-        {/* Blurred cover backdrop. A single static image (never animate the
-            blur radius) — cheaper than a live `backdrop-filter` sampling
-            the whole window, and this view only ever shows one track. */}
+        {/* Blurred cover backdrop + scrim to keep lyrics readable over it. */}
         {coverUrl ? (
           <img
             key={coverUrl}
             src={coverUrl}
             alt=""
             aria-hidden
-            className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover blur-3xl saturate-150"
-            style={{ opacity: 0.35 }}
+            className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover blur-3xl saturate-150 opacity-35"
           />
         ) : null}
-        {/* Dark scrim: blur alone does not guarantee contrast over a bright
-            cover, so a ~50% scrim keeps text readable over arbitrary art. */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-black/55"
         />
 
-        {/* Close */}
-        <div className="relative flex shrink-0 justify-end p-3">
+        {/* Top bar — draggable strip (the title bar's own is behind the overlay). */}
+        <div
+          data-tauri-drag-region
+          className="relative flex shrink-0 items-center justify-end px-4 pt-4 pb-2"
+        >
           <Button
             ref={closeBtnRef}
             variant="ghost"
             size="icon"
             aria-label="Close now playing"
             onClick={() => setOpen(false)}
-            className="text-white hover:bg-white/10"
+            className="size-11 rounded-full bg-black/35 text-white shadow-sm ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-black/60 hover:text-white"
           >
-            <XIcon />
+            <ChevronDownIcon className="size-7" />
           </Button>
         </div>
 
-        {/* Two columns: cover+controls left, lyrics right. Stacks on narrow
-            widths. Every ancestor of the lyrics body is a `min-h-0` flex
-            column so its internal `h-full` scroller resolves. */}
+        {/* Cover+controls left, lyrics right; stacks when narrow. Every lyrics
+            ancestor is a `min-h-0` flex column so its `h-full` scroller resolves. */}
         <div className="relative flex min-h-0 flex-1 flex-col gap-6 px-6 pb-8 lg:flex-row lg:gap-10 lg:px-10">
-          {/* LEFT */}
-          <div className="flex min-h-0 flex-col items-center justify-center gap-5 lg:w-1/2">
+          {/* LEFT: cover + controls */}
+          <div className="flex min-h-0 flex-col items-center justify-center gap-5 lg:w-2/5">
             <div className="relative isolate aspect-square w-full max-w-[min(70vw,38vh)] rounded-xl shadow-[0_8px_40px_rgb(0_0_0/0.45)] lg:max-w-[min(80vw,58vh)]">
               <Thumbnail
                 thumbnails={track.thumbnails}
@@ -194,9 +161,7 @@ export function NowPlayingOverlay() {
               <ArtworkOutline className="rounded-xl" />
             </div>
 
-            {/* Meta + like. `text-white` (not a token) guarantees contrast
-                directly over the blurred cover; text-shadow is the safety
-                net for the brightest covers. */}
+            {/* Title + artist + like */}
             <div className="flex w-full max-w-xl items-start gap-3">
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-2xl font-semibold text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.6)]">
@@ -231,9 +196,7 @@ export function NowPlayingOverlay() {
               </div>
             </div>
 
-            {/* Transport — same cluster the player bar renders, scaled up.
-                Kept inline (not extracted) so the two working bars stay
-                untouched. */}
+            {/* Transport — the player-bar cluster, inlined and scaled up. */}
             <div className="flex items-center justify-center gap-2 text-white">
               <Button
                 variant="ghost"
@@ -297,7 +260,7 @@ export function NowPlayingOverlay() {
               </Tooltip>
             </div>
 
-            {/* Secondary: volume, lyrics source, more */}
+            {/* Volume + lyrics source + more */}
             <div className="flex items-center justify-center gap-1">
               <VolumeControl />
               <LyricsSourceButton state={lyricsState} />
@@ -305,10 +268,10 @@ export function NowPlayingOverlay() {
             </div>
           </div>
 
-          {/* RIGHT: full-height synced lyrics. `text-shadow` on the wrapper
-              is a contrast safety net over the scrim. */}
-          <div className="flex min-h-0 flex-1 flex-col lg:w-1/2">
-            <div className="min-h-0 flex-1 [text-shadow:0_1px_3px_rgb(0_0_0/0.55)]">
+          {/* RIGHT: synced lyrics. `np-lyrics` scopes the overlay overrides
+              (index.css); text-shadow is a contrast safety net over the scrim. */}
+          <div className="flex min-h-0 flex-1 flex-col lg:w-3/5">
+            <div className="np-lyrics min-h-0 flex-1 [text-shadow:0_1px_3px_rgb(0_0_0/0.55)]">
               <LyricsBody state={lyricsState} />
             </div>
           </div>
